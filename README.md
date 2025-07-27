@@ -138,4 +138,4 @@ sudo dd if=rpi4-complete.img of=/dev/sdX bs=4M status=progress
 
 **최종 업데이트**: 2025-07-27  
 **테스트 환경**: WSL2, Docker, Ubuntu 22.04  
-**빌드 성공률**: 100% (36분 평균)
+**빌드 성공률**: 100% (36분 평균)<!-- Last updated: Sun Jul 27 09:55:12 KST 2025 -->
