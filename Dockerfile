@@ -6,8 +6,11 @@ ENV ARCH=arm64
 ENV CROSS_COMPILE=aarch64-linux-gnu-
 ENV KERNEL=kernel8
 
-# 빌드 도구 설치
-RUN apt-get update && apt-get install -y \
+# 빌드 도구 설치 (재시도 로직 포함)
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends \
     wget \
     unzip \
     dosfstools \
@@ -34,7 +37,7 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     file \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ARM GCC 설치
 RUN wget -O gcc-arm-none-eabi-10.3-2021.10-x86_64-linux.tar.bz2 \
