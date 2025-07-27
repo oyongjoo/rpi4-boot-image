@@ -66,8 +66,43 @@ jobs:
       run: |
         echo "🚀 RPi4 빌드 시작 - $(date)"
         
-        # CI 전용 빌드 스크립트 실행
-        python3 ci-build.py
+        # Docker 컨테이너에서 직접 빌드 실행
+        docker run --privileged -v $(pwd):/output \
+          ${{ env.IMAGE_NAME }}:latest \
+          bash -c "
+            set -e
+            echo '=== 빌드 환경 확인 ==='
+            pwd && ls -la
+            
+            echo '=== Linux 커널 빌드 ==='
+            cd /rpi-boot/linux
+            make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- bcm2711_defconfig
+            echo 'CONFIG_NETFILTER=y' >> .config
+            echo 'CONFIG_IPTABLES=y' >> .config  
+            make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+            make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j\$(nproc) Image dtbs modules
+            
+            echo '=== Buildroot 빌드 ==='
+            cd /rpi-boot/buildroot
+            make raspberrypi4_64_defconfig
+            echo 'BR2_PACKAGE_OPENSSH=y' >> .config
+            echo 'BR2_PACKAGE_SUDO=y' >> .config
+            echo 'BR2_PACKAGE_NANO=y' >> .config
+            echo 'BR2_PACKAGE_BASH=y' >> .config
+            make olddefconfig
+            make -j\$(nproc)
+            
+            echo '=== 이미지 생성 ==='
+            if [ -f output/images/sdcard.img ]; then
+              cp output/images/sdcard.img /output/rpi4-complete.img
+              echo '✅ 이미지 생성 성공'
+              ls -lh /output/rpi4-complete.img
+            else
+              echo '❌ sdcard.img 파일을 찾을 수 없습니다'
+              ls -la output/images/
+              exit 1
+            fi
+          "
         
         echo "✅ 빌드 완료 - $(date)"
         
