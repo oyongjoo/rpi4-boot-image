@@ -1,0 +1,150 @@
+name: Daily RPi4 Build & Test
+
+on:
+  schedule:
+    # 매일 오전 2시 (UTC) 실행 = 한국시간 11시
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # 수동 실행 가능
+    inputs:
+      force_rebuild:
+        description: '강제 리빌드 (캐시 무시)'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  # 빌드 설정
+  IMAGE_NAME: rpi4-boot-builder
+  CONTAINER_NAME: rpi4-builder-ci
+  ARTIFACT_NAME: rpi4-complete-image
+  
+jobs:
+  build:
+    name: RPi4 커널 빌드
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # 2시간 제한
+    
+    steps:
+    - name: 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: 디스크 공간 확보
+      run: |
+        # GitHub Actions 러너 공간 최적화
+        sudo apt-get clean
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/share/boost
+        df -h
+        
+    - name: Docker Buildx 설정
+      uses: docker/setup-buildx-action@v3
+      
+    - name: 빌드 캐시 복원
+      if: ${{ github.event.inputs.force_rebuild != 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: |
+          /tmp/.buildx-cache
+          ./cache
+        key: rpi4-build-${{ runner.os }}-${{ hashFiles('Dockerfile') }}
+        restore-keys: |
+          rpi4-build-${{ runner.os }}-
+          
+    - name: Docker 이미지 빌드
+      run: |
+        docker build -t ${{ env.IMAGE_NAME }}:latest .
+        docker images
+        
+    - name: RPi4 빌드 실행
+      run: |
+        echo "🚀 RPi4 빌드 시작 - $(date)"
+        
+        # CI 전용 빌드 스크립트 실행
+        python3 ci-build.py
+        
+        echo "✅ 빌드 완료 - $(date)"
+        
+    - name: 빌드 결과 검증
+      run: |
+        # 이미지 무결성 검사
+        echo "🔍 이미지 검증 중..."
+        
+        # 파티션 구조 확인
+        sudo fdisk -l rpi4-complete.img
+        
+        # 파일 크기 확인 (100MB-200MB 범위)
+        SIZE=$(stat -c%s rpi4-complete.img)
+        MIN_SIZE=$((100 * 1024 * 1024))  # 100MB
+        MAX_SIZE=$((200 * 1024 * 1024))  # 200MB
+        
+        if [ $SIZE -lt $MIN_SIZE ] || [ $SIZE -gt $MAX_SIZE ]; then
+          echo "❌ 이미지 크기 이상: ${SIZE} bytes"
+          exit 1
+        fi
+        
+        echo "✅ 이미지 검증 통과: ${SIZE} bytes"
+        
+    - name: 빌드 아티팩트 업로드
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.ARTIFACT_NAME }}-${{ github.run_number }}
+        path: |
+          rpi4-complete.img
+          build.log
+          build_progress.log
+        retention-days: 30
+        
+    - name: 빌드 통계 생성
+      run: |
+        echo "📊 빌드 통계" > build-stats.md
+        echo "- 빌드 번호: ${{ github.run_number }}" >> build-stats.md
+        echo "- 빌드 시간: $(date)" >> build-stats.md
+        echo "- 커밋: ${{ github.sha }}" >> build-stats.md
+        echo "- 이미지 크기: $(ls -lh rpi4-complete.img | awk '{print $5}')" >> build-stats.md
+        cat build-stats.md
+        
+  notify:
+    name: 빌드 결과 알림
+    needs: build
+    runs-on: ubuntu-latest
+    if: always()  # 성공/실패 관계없이 실행
+    
+    steps:
+    - name: 텔레그램 알림
+      if: ${{ vars.TELEGRAM_BOT_TOKEN && vars.TELEGRAM_CHAT_ID }}
+      run: |
+        if [ "${{ needs.build.result }}" == "success" ]; then
+          MESSAGE="✅ RPi4 빌드 성공
+        📅 $(date '+%Y-%m-%d %H:%M')
+        🔗 ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        else
+          MESSAGE="❌ RPi4 빌드 실패
+        📅 $(date '+%Y-%m-%d %H:%M')
+        🔗 ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        fi
+        
+        curl -s -X POST "https://api.telegram.org/bot${{ vars.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          -d chat_id="${{ vars.TELEGRAM_CHAT_ID }}" \
+          -d text="$MESSAGE"
+          
+    - name: Discord 알림 (선택사항)
+      if: ${{ vars.DISCORD_WEBHOOK_URL }}
+      run: |
+        STATUS_EMOJI="${{ needs.build.result == 'success' && '✅' || '❌' }}"
+        curl -H "Content-Type: application/json" \
+          -X POST \
+          -d "{\"content\":\"$STATUS_EMOJI RPi4 빌드 ${{ needs.build.result }} - $(date)\"}" \
+          "${{ vars.DISCORD_WEBHOOK_URL }}"
+          
+  cleanup:
+    name: 정리 작업
+    needs: [build, notify]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: 오래된 아티팩트 정리
+      run: |
+        echo "🗑️ 30일 이상 된 아티팩트는 자동 삭제됩니다"
+        # GitHub에서 자동 처리됨 (retention-days: 30)

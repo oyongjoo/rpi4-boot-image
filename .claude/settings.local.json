@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(python3:*)",
+      "Bash(npm search:*)",
+      "Bash(claude mcp add:*)",
+      "Bash(claude mcp remove:*)"
+    ],
+    "deny": []
+  }
+}

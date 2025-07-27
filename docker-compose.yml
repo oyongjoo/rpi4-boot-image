@@ -1,0 +1,59 @@
+version: '3.8'
+
+# build.py가 rpi4-builder-persistent 컨테이너를 관리
+# docker-compose는 보조 서비스들과 새로운 빌드 환경 제공
+
+services:
+  # 새로운 빌드 인스턴스 (기존 컨테이너와 별도)
+  builder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rpi4-boot-builder:latest
+    container_name: rpi4-compose-builder
+    privileged: true
+    volumes:
+      - ./:/output:rw
+    environment:
+      - ARCH=arm64
+      - CROSS_COMPILE=aarch64-linux-gnu-
+      - KERNEL=kernel8
+    working_dir: /rpi-boot
+    command: ["sleep", "infinity"]
+    stdin_open: true
+    tty: true
+    restart: "no"
+
+  # 개발/디버깅용 서비스
+  debug:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rpi4-boot-builder:latest
+    container_name: rpi4-debug-container
+    privileged: true
+    volumes:
+      - ./:/output:rw
+    environment:
+      - ARCH=arm64
+      - CROSS_COMPILE=aarch64-linux-gnu-
+      - KERNEL=kernel8
+    working_dir: /rpi-boot
+    command: ["/bin/bash"]
+    stdin_open: true
+    tty: true
+    restart: "no"
+    profiles: ["debug"]
+
+  # 빌드 모니터링 서비스 (기존 컨테이너 모니터링)
+  monitor:
+    image: ubuntu:22.04
+    container_name: rpi4-monitor
+    volumes:
+      - ./:/workspace:ro
+    working_dir: /workspace
+    command: ["bash", "-c", "apt-get update && apt-get install -y watch && ./monitor_build_realtime.sh"]
+    depends_on:
+      - builder
+    restart: "no"
+    profiles: ["monitor"]

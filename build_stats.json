@@ -1,0 +1,9 @@
+{
+  "start_time": "2025-07-26T14:24:49.862785",
+  "end_time": null,
+  "attempts": 1,
+  "current_stage": "docker_build",
+  "status": "aborted",
+  "errors": [],
+  "stage_times": {}
+}
