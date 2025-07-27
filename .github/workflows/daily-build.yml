@@ -11,6 +11,12 @@ on:
         required: false
         default: 'false'
         type: boolean
+  push:  # 푸시 시에도 실행
+    branches: [ main ]
+    paths:
+      - '.github/workflows/**'
+      - 'Dockerfile'
+      - '*.py'
 
 env:
   # 빌드 설정
